@@ -26,6 +26,8 @@ resulting distributions.
 The second part is a series of significance test of the ToothGrowth
 database, testing differences between treatment and doses.
 
+*Code is include in the rmd file in:* https://github.com/CMorgadoM/Statistical_Inference_Project
+
 # Part 1: Simulations
 
 ## 1.1 - Generate data
