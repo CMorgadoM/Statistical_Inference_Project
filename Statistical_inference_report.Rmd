@@ -1,0 +1,316 @@
+---
+title: "Statistical Inference Course Project"
+author: "Cristobal Morgado"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    fig_caption: yes
+  html_document: 
+    fig_caption: yes
+    keep_md: yes
+  word_document: 
+    fig_caption: yes
+    keep_md: yes
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+# Introduction
+
+The following report is composed by two parts. The first one generate a
+distribution of the means and variances of an exponential distribution,
+compare the estimated parameters with the theoretical ones and plot the
+resulting distributions.
+
+The second part is a series of significance test of the ToothGrowth
+database, testing differences between treatment and doses.
+
+# Part 1: Simulations
+
+## 1.1 - Generate data
+
+The first step is to generate the simulations data, here I've used the
+rexp() function to generate 1000 samples of 40 observations, with lambda
+= 0.2. Then get the mean and variance of every individual sample and
+store them the "avg" and "var" variables respectively.
+
+```{r, echo=FALSE, results='hide', message=FALSE}
+#First we load the relevant packages
+library(ggplot2)
+library(dplyr)
+```
+
+```{r, echo=FALSE}
+#generate the distributions and get the estimated values of the parameters
+avg <- numeric()
+var <- numeric()
+for(i in 1:1000){
+dist_exp <- rexp(40, 0.2)
+avg[i] <- mean(dist_exp)
+var[i] <- var(dist_exp)
+}
+Estimadores <- as_tibble(cbind(avg, var))
+```
+
+## 1.2 - Plotting the results
+
+Once generated the estimated parameters of the mean and variance of the
+distribution I've used ggplot to create an histogram and look at the
+form of the distribution. The resulting plots are presented in the
+following figures, when we can observe that the distribution of the
+means resembles a normal distribution, on the other hand, the
+distribution of the variance resembles more a poisson distribution.
+
+In both cases the sample average of the parameters (mean of
+`r mean(avg)` and variance of `r mean(var)`), showed by the red lines,
+are close to the theoretical parameters, represented by the green line. **(Results showed in appendix 1)**
+
+
+# Part 2: Statistical inference
+
+## 2.1 - Understanding the database
+
+```{r, echo=FALSE, message=FALSE, results='hide', warning=FALSE}
+#loading packages and the database
+library(datasets)
+library(stargazer)
+
+toothgrowth <- datasets::ToothGrowth
+```
+
+The database for the project is the ToothGrowth database, that measure
+the growth of 60 guinea pigs tooth, treated by two types of supplements,
+orange juice (OJ) and a form of vitamin C called ascorbic acid (VC). The
+treatments are supplemented in doses of 0.5, 1 and 2 mg/day. The
+database contains the following variables:
+
+1.-len(num) = indicates the length of the tooths at the end of the treatment
+
+2.-supp(factor) = indicates the treatment method
+
+3.-dose(num) = indicates the doses in mg/day
+
+## 2.2 - Summary of the data
+
+```{r, echo=FALSE}
+summary(toothgrowth) 
+```
+
+```{r, echo=FALSE, results='asis',dev='pdf'}
+stargazer(toothgrowth,title = "Summary Statistics", header = F)
+```
+
+**(Distribution of results showed in appendix 2)**
+
+## 2.3 - Statistical test
+
+### Test 1: Is there a difference between treatment methods?
+
+H0: mean(OJ) = mean(VC)
+
+```{r, echo=FALSE}
+oj <- filter(toothgrowth, supp=="OJ")
+vc <- filter(toothgrowth, supp=="VC")
+
+pval_test1 <- t.test(oj$len, vc$len, paired = F, alternative = "two.sided", conf.level = 0.975)$p.value
+
+confint_test1 <- t.test(oj$len, vc$len, paired = F, alternative = "two.sided", conf.level = 0.975)$conf.int
+
+```
+
+Conclusion: Confidence interval with 95% confidence is equal to
+`r confint_test1` and includes zero, therefore we fail to reject H0 and
+there is no evidence that the treatment affect differently on the
+toothgrowth for guinea pigs. Also P-value is equal to `r pval_test1`,
+and we fail to reject the null hypothesis under 95% confidence.
+
+### Test 2: Is there a difference between doses?
+
+H0a: mean(0.5) = mean(1)
+
+H0b: mean(1) = mean(2)
+
+H0b: mean(0.5) = mean(2)
+
+```{r, echo=FALSE}
+mg0.5 <- filter(toothgrowth, dose==0.5)
+mg1 <- filter(toothgrowth, dose==1)
+mg2 <- filter(toothgrowth, dose==2)
+pval2.1 <- t.test(mg0.5$len, mg1$len, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value
+
+pval2.2 <- t.test(mg2$len, mg1$len, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value
+
+pval2.3 <- t.test(mg2$len, mg0.5$len, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value
+```
+
+a) dif 0.5 mg/day and 1 mg/day
+
+With a P-value of `r pval2.1` we reject the H0 and conclude that there
+is significant difference between 0.5 and 1 mg per day at any reasonable
+significance level.
+
+b) dif 1 mg/day and 2 mg/day
+
+With a P-value of `r pval2.2` we reject the H0 and conclude that there
+is significant difference between 1 and 2 mg per day at any reasonable
+significance level.
+
+c) dif 0.5 mg/day and 2 mg/day
+
+With a P-value of `r pval2.3` we reject the H0 and conclude that there
+is significant difference between 0.5 and 2 mg per day at any reasonable
+significance level.
+
+### test 3: What treatment-doses pairs are signiticantly different?
+
+For this test, as it's being tested 9 hypothesis, I've applied a
+**Bonferroni correction** as the criteria to find the significant
+differences. This has been done saving the p-values in the pValues
+variable and applied the p.adjust function to get the p-values adjusted
+by the Bonferroni correction.
+
+Also, since the samples have only 10 observations in every table, a
+**bootstrap** method is used to generate 1000 iterations of the means of
+resamples values, with repetitions, to be able to draw better
+conclusions from the data.
+
+```{r, echo=FALSE}
+#generating the databases and appling bootstrap
+n <- 10 # all tables have 10 values, so this is the "n" values for all of them 
+B <- 1000 # 1000 bootstrap itarations
+
+oj0.5 <- filter(toothgrowth, dose==0.5, supp == "OJ")
+rs_oj05 <- matrix(sample(oj0.5$len,n*B, replace = T),B,n) #resampled data
+rsMoj05 <- apply(rs_oj05, 1, mean) #resampled Means
+
+
+oj1 <- filter(toothgrowth, dose==1, supp == "OJ")
+rs_oj1 <- matrix(sample(oj1$len,n*B, replace = T),B,n) #resampled data
+rsMoj1 <- apply(rs_oj1, 1, mean) #resampled Means
+
+oj2 <- filter(toothgrowth, dose==2, supp == "OJ")
+rs_oj2 <- matrix(sample(oj2$len,n*B, replace = T),B,n) #resampled data
+rsMoj2 <- apply(rs_oj2, 1, mean) #resampled Means
+
+
+vc0.5 <- filter(toothgrowth, dose==0.5, supp == "VC")
+rs_vc05 <- matrix(sample(vc0.5$len,n*B, replace = T),B,n) #resampled data
+rsMvc05 <- apply(rs_vc05, 1, mean) #resampled Means
+
+vc1 <- filter(toothgrowth, dose==1, supp == "VC")
+rs_vc1 <- matrix(sample(vc1$len,n*B, replace = T),B,n) #resampled data
+rsMvc1 <- apply(rs_vc1, 1, mean) #resampled Means
+
+vc2 <- filter(toothgrowth, dose==2, supp == "VC")
+rs_vc2 <- matrix(sample(vc2$len,n*B, replace = T),B,n) #resampled data
+rsMvc2 <- apply(rs_vc2, 1, mean) #resampled Means
+
+```
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+#p-values with the same doses and different treatment method
+
+pValues <- matrix(nrow = 9, ncol = 2)
+
+pValues[1,] <- c(t.test(rsMoj05, rsMvc05, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value,"OJ-VC, 0.5mg/day")
+pValues[2,] <- c(t.test(rsMoj1, rsMvc1, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value,"OJ-VC, 1mg/day")
+pValues[3,] <- c(t.test(rsMoj2, rsMvc2, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value,"OJ-VC, 2mg/day")
+
+#p-values for difference betwen same treatment method and different doses 
+pValues[4,] <- c(t.test(rsMoj05, rsMoj1, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value,"OJ, 0.5-1 mg/day")
+pValues[5,] <- c(t.test(rsMoj05, rsMoj2, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value,"OJ, 0.5-2 mg/day")
+pValues[6,] <- c(t.test(oj2$len, rsMoj1, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value,"OJ,2-1 mg/day")
+pValues[7,] <- c(t.test(rsMvc05, rsMvc1, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value,"VC, 0.5-1 mg/day")
+pValues[8,] <- c(t.test(rsMvc05, rsMvc2, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value,"VC, 0.5-2 mg/day")
+pValues[9,] <- c(t.test(rsMvc2, rsMvc1, paired=F, alternative = "two.sided", conf.level = 0.975)$p.value,"VC, 2-1 mg/day")
+
+pValues <- as_tibble(pValues)
+pValues <- mutate(pValues, adj_values = p.adjust(pValues$V1, method = "bonferroni"))
+Sig_5_percent <- sapply(pValues$adj_values, function(x) {if(x<0.05){"Yes"}else{"No"}})
+pValues <- cbind(pValues, Sig_5_percent)
+
+```
+
+Conclusions: The following results have a significant difference
+
+```{r,results='markup', echo=FALSE, warning=FALSE, message=FALSE}
+filter(pValues,Sig_5_percent=="Yes") %>% 
+    select(V2, adj_values) %>% 
+    rename(Pair_treatment_dose=V2) %>% 
+    kableExtra::kable(format = "latex", booktabs=T) %>% 
+    kableExtra::add_header_above(header = "Significant test at 5% with bonferroni correction")
+
+```
+
+```{r}
+
+```
+
+
+# Appendix
+
+## 1) Plot 1: Exponential distribution, in red sample mean and in green theoretical mean 
+
+```{r plot, echo=F}
+if(!file.exists("Plot1.png")){
+    png(filename = "Plot1.png")
+    gmean <-ggplot(Estimadores, aes(avg,
+                            fill=avg))+
+        geom_histogram(fill="cyan3",
+                       color="black")+
+        geom_vline(aes(xintercept=mean(avg), color="red"), 
+                   lwd=1, 
+                   show.legend = T)+
+        geom_vline(aes(xintercept=(1/0.2), color="green"), 
+                   lwd=1, 
+                   show.legend = T)+
+        labs(x="Mean values", 
+             y="Number of values",
+            title="Distribution of the means of an exponential distribution")+
+        scale_color_manual(labels=c("Sample mean", 
+                                    "Theoretical mean"), 
+                           values=c("red", "green"))+
+        theme_bw()+
+        theme(legend.title = element_blank())
+
+    gvar <- ggplot(Estimadores, aes(var,
+                            fill=var))+
+        geom_histogram(fill="cyan2",
+                       color="black")+
+        geom_vline(aes(xintercept=mean(var), color="red"), 
+                   lwd=1, 
+                   show.legend = T)+
+        geom_vline(aes(xintercept=(1/0.2)^2, color="green"), 
+                   lwd=1, 
+                   show.legend = T)+
+        labs(x="Variance values", 
+             y="Number of values",
+            title="Distribution of variance of an exponential distribution")+
+        scale_color_manual(labels=c("Sample average variance", 
+                                    "Theoretical variance"), 
+                           values=c("red", "green"))+
+        theme_bw()+
+        theme(legend.title = element_blank())
+
+
+    g <- gridExtra::arrangeGrob(gmean, gvar)
+    grid::grid.newpage()
+    grid::grid.draw(g) 
+    dev.off()
+}else{knitr::include_graphics("Plot1.png")}
+```
+
+## 2) Plot 2: Distribution of results in ToothGrowt database
+
+```{r plot2, echo=FALSE}
+if(!file.exists("Plot2.png")){
+png("Plot2.png")
+ggplot(toothgrowth, aes(len, fill=supp))+
+    geom_histogram( color="black")+
+    facet_grid(.~dose)+
+    labs(title="Distribution of results, by supplement and dose")
+dev.off()
+} else {knitr::include_graphics("Plot2.png")}
+```
+
